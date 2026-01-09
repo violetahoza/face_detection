@@ -76,7 +76,7 @@ class FaceDetectorTrainer:
             for face_box in face_bboxes:
                 iou = self.calculate_iou(candidate_box, face_box)
                 
-                if iou > 0.2: 
+                if iou > Config.NEGATIVE_IOU_THRESHOLD:
                     is_valid = False
                     break
             
@@ -131,7 +131,7 @@ class FaceDetectorTrainer:
                 features_flip = self.feature_extractor.extract_features(face_flipped)
                 positive_features.append(features_flip)
                 
-            n_negatives = len(ann['bboxes']) * 10
+            n_negatives = len(ann['bboxes']) * Config.NEGATIVE_SAMPLES_PER_IMAGE
             
             collected = 0
             for _ in range(n_negatives * 2): 
@@ -154,54 +154,125 @@ class FaceDetectorTrainer:
         
         return X, y
     
+    def mine_hard_negatives(self, annotations, max_images=100):
+        print(f"\n⛏️  Mining hard negatives from {min(max_images, len(annotations))} images...")
+
+        from detector import FaceDetector
+        detector = FaceDetector(self)
+
+        hard_negatives = []
+        images_processed = 0
+
+        for ann in annotations[:max_images]:
+            img_path = ann['image_path']
+            if not os.path.exists(img_path):
+                continue
+
+            image = cv2.imread(img_path)
+            if image is None:
+                continue
+
+            detections = detector.detect(image, detection_threshold=0.0)  # Low threshold to catch FPs
+
+            for det in detections:
+                det_box = det['bbox']
+                is_false_positive = True
+
+                for gt_box in ann['bboxes']:
+                    iou = self.calculate_iou(det_box, gt_box)
+                    if iou > 0.3:  # Matches a real face
+                        is_false_positive = False
+                        break
+
+                if is_false_positive and det['score'] > 0:
+                    # Extract this false positive as a hard negative
+                    x0, y0, x1, y1 = det_box
+                    x0, y0 = max(0, x0), max(0, y0)
+                    x1 = min(image.shape[1], x1)
+                    y1 = min(image.shape[0], y1)
+
+                    if x1 > x0 and y1 > y0:
+                        crop = image[y0:y1, x0:x1]
+                        if crop.size > 0:
+                            features = self.feature_extractor.extract_features(crop)
+                            hard_negatives.append(features)
+
+            images_processed += 1
+            if images_processed % 20 == 0:
+                print(f"    Processed {images_processed} images, found {len(hard_negatives)} hard negatives")
+
+        print(f"  Found {len(hard_negatives)} hard negatives")
+        return hard_negatives
+
     def train(self, train_annotations_path=None, train_images_dir=None, max_images=None):
         print("🚀 TRAINING FACE DETECTOR")
         print("=" * 60)
-        
+
         train_annotations_path = train_annotations_path or Config.TRAIN_ANNOTATIONS
         train_images_dir = train_images_dir or Config.TRAIN_IMAGES_DIR
         max_images = max_images or Config.MAX_TRAIN_IMAGES
-        
+
         parser = AnnotationParser(train_annotations_path, train_images_dir)
         annotations = parser.parse()
-        
+
         stats = parser.get_stats()
         print(f"\n📊 Dataset Statistics:")
         print(f"  Total images: {stats['total_images']}")
         print(f"  Total faces: {stats['total_faces']}")
         print(f"  Using: {min(max_images, stats['total_images'])} images")
-        
+
         X, y = self.collect_training_samples(annotations, max_images)
-        
+
         print(f"\n📊 Training Data:")
         print(f"  Total samples: {len(X)}")
         print(f"  Positive (faces): {np.sum(y == 1)}")
         print(f"  Negative (non-faces): {np.sum(y == 0)}")
         print(f"  Feature dimension: {X.shape[1]}")
-        
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
-        
-        print(f"\n🔄 Normalizing features...")
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        X_val_scaled = self.scaler.transform(X_val)
-        
-        print(f"\n🎯 Training SVM classifier...")
-        print(f"  Kernel: {Config.SVM_KERNEL}")
-        print(f"  C: {Config.SVM_C}")
-        
-        self.classifier.fit(X_train_scaled, y_train)
-        
-        train_acc = self.classifier.score(X_train_scaled, y_train)
-        val_acc = self.classifier.score(X_val_scaled, y_val)
-        
+
+        use_hard_mining = getattr(Config, 'HARD_NEGATIVE_MINING', False)
+        mining_rounds = getattr(Config, 'HARD_NEGATIVE_ROUNDS', 2) if use_hard_mining else 0
+
+        for round_num in range(mining_rounds + 1):
+            if round_num > 0:
+                print(f"\n🔄 HARD NEGATIVE MINING - Round {round_num}/{mining_rounds}")
+
+                hard_negs = self.mine_hard_negatives(annotations, max_images=80)
+
+                if hard_negs:
+                    X_hard = np.array(hard_negs)
+                    y_hard = np.zeros(len(hard_negs))
+
+                    X = np.vstack([X, X_hard])
+                    y = np.concatenate([y, y_hard])
+
+                    print(f"  Added {len(hard_negs)} hard negatives")
+                    print(f"  New total: {len(X)} samples ({np.sum(y == 1)} pos, {np.sum(y == 0)} neg)")
+
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+
+            print(f"\n🔄 Normalizing features...")
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_val_scaled = self.scaler.transform(X_val)
+
+            round_label = f"Round {round_num}" if mining_rounds > 0 else "Training"
+            print(f"\n🎯 {round_label} - Training SVM classifier...")
+            print(f"  Kernel: {Config.SVM_KERNEL}")
+            print(f"  C: {Config.SVM_C}")
+
+            self.classifier.fit(X_train_scaled, y_train)
+
+            train_acc = self.classifier.score(X_train_scaled, y_train)
+            val_acc = self.classifier.score(X_val_scaled, y_val)
+
+            print(f"  Training accuracy: {train_acc:.4f} ({train_acc*100:.2f}%)")
+            print(f"  Validation accuracy: {val_acc:.4f} ({val_acc*100:.2f}%)")
+
         print(f"\n✅ TRAINING COMPLETE!")
-        print(f"  Training accuracy: {train_acc:.4f} ({train_acc*100:.2f}%)")
-        print(f"  Validation accuracy: {val_acc:.4f} ({val_acc*100:.2f}%)")
-        
+
         self.save_model()
-        
+
         return {
             'train_accuracy': train_acc,
             'val_accuracy': val_acc,

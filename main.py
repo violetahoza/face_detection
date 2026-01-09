@@ -411,7 +411,7 @@ class ModernFaceDetectionGUI:
                 self.message_queue.put(("log", f"  Face {i}: score={score:.3f}, bbox={bbox}"))
             
             result_image = self.detector.draw_detections(image, detections)
-            output_path = os.path.join(Config.OUTPUT_DIR, f"detected_{Path(img_path).name}")
+            output_path = os.path.join(Config.DETECTIONS_DIR, f"detected_{Path(img_path).name}")
             cv2.imwrite(output_path, result_image)
             
             self.message_queue.put(("log", f"💾 Saved: {Path(output_path).name}\n"))
@@ -486,7 +486,7 @@ class ModernFaceDetectionGUI:
                 self.message_queue.put(("log", f"  → {len(detections)} face(s)"))
                 
                 result_image = self.detector.draw_detections(image, detections)
-                output_path = os.path.join(Config.OUTPUT_DIR, f"detected_{img_name}")
+                output_path = os.path.join(Config.DETECTIONS_DIR, f"detected_{img_name}")
                 cv2.imwrite(output_path, result_image)
             
             self.message_queue.put(("log", f"\n✓ Batch complete: {total_faces} faces in {processed} images\n"))
@@ -564,7 +564,6 @@ class ModernFaceDetectionGUI:
             main_frame = tk.Frame(result_window)
             main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            # Original image
             left_frame = tk.LabelFrame(main_frame, text="Original Image", font=("Arial", 11, "bold"))
             left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
             

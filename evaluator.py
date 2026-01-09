@@ -29,6 +29,26 @@ class ModelEvaluator:
         
         return inter_area / union_area if union_area > 0 else 0.0
     
+    def draw_evaluation_results(self, image, gt_boxes, detections, matched_gt, matched_det):
+        result = image.copy()
+        
+        for i, gt_box in enumerate(gt_boxes):
+            x0, y0, x1, y1 = gt_box
+            color = (255, 0, 0) if i in matched_gt else (0, 0, 255)  # Blue if matched, Red if missed (FN)
+            cv2.rectangle(result, (x0, y0), (x1, y1), color, 2)
+            label = "GT-Match" if i in matched_gt else "GT-Miss"
+            cv2.putText(result, label, (x0, y0 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        
+        for i, det in enumerate(detections):
+            x0, y0, x1, y1 = det['bbox']
+            score = det['score']
+            color = (0, 255, 0) if i in matched_det else (0, 165, 255)  # Green if TP, Orange if FP
+            cv2.rectangle(result, (x0, y0), (x1, y1), color, 2)
+            label = f"TP {score:.2f}" if i in matched_det else f"FP {score:.2f}"
+            cv2.putText(result, label, (x0, y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        
+        return result
+    
     def evaluate(self, test_annotations_path=None, test_images_dir=None, 
                  max_images=None, iou_threshold=None, detection_threshold=None):
        
@@ -43,7 +63,8 @@ class ModelEvaluator:
         
         parser = AnnotationParser(test_annotations_path, test_images_dir)
         annotations = parser.parse()
-        
+        annotations = sorted(annotations, key=lambda x: x['image_name'])
+
         if max_images:
             annotations = annotations[:max_images]
         
@@ -56,6 +77,9 @@ class ModelEvaluator:
         print(f"  Detection threshold: {detection_threshold}")
         print(f"  IoU threshold: {iou_threshold}")
         
+        eval_output_dir = os.path.join(Config.OUTPUT_DIR, "evaluation_results")
+        os.makedirs(eval_output_dir, exist_ok=True)
+
         print(f"\n🔄 Running detection...")
         
         true_positives = 0
@@ -112,6 +136,12 @@ class ModelEvaluator:
                     false_positives += 1
             
             false_negatives += len(gt_boxes) - len(matched_gt)
+
+            result_image = self.draw_evaluation_results(image, gt_boxes, detections, matched_gt, matched_det)
+            output_filename = f"eval_{idx:04d}_{os.path.basename(img_path)}"
+            output_path = os.path.join(eval_output_dir, output_filename)
+            cv2.imwrite(output_path, result_image)
+        
         
         precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
         recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
@@ -138,6 +168,34 @@ class ModelEvaluator:
         print(f"  Recall: {recall*100:.1f}% of actual faces were detected")
         print(f"  F1-Score: Overall detection quality = {f1_score*100:.1f}%")
         
+        print(f"\n💾 Visualizations saved to: {eval_output_dir}")
+        print(f"  Color coding:")
+        print(f"    🔵 Blue boxes = Ground truth (matched)")
+        print(f"    🔴 Red boxes = Ground truth (missed - False Negatives)")
+        print(f"    🟢 Green boxes = Detections (True Positives)")
+        print(f"    🟠 Orange boxes = Detections (False Positives)")
+
+        metrics_path = os.path.join(eval_output_dir, "evaluation_metrics.txt")
+        with open(metrics_path, 'w') as f:
+            f.write("=" * 60 + "\n")
+            f.write("EVALUATION RESULTS\n")
+            f.write("=" * 60 + "\n\n")
+            f.write(f"Detection Statistics:\n")
+            f.write(f"  Ground truth faces: {total_gt_faces}\n")
+            f.write(f"  Detected faces: {total_det_faces}\n")
+            f.write(f"  True Positives: {true_positives}\n")
+            f.write(f"  False Positives: {false_positives}\n")
+            f.write(f"  False Negatives: {false_negatives}\n\n")
+            f.write(f"Performance Metrics:\n")
+            f.write(f"  Precision: {precision:.4f} ({precision * 100:.2f}%)\n")
+            f.write(f"  Recall: {recall:.4f} ({recall * 100:.2f}%)\n")
+            f.write(f"  F1-Score: {f1_score:.4f} ({f1_score * 100:.2f}%)\n\n")
+            f.write(f"Parameters:\n")
+            f.write(f"  Detection threshold: {detection_threshold}\n")
+            f.write(f"  IoU threshold: {iou_threshold}\n")
+        
+        print(f"  Metrics saved to: {metrics_path}")
+
         return {
             'precision': precision,
             'recall': recall,

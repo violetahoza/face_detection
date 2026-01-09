@@ -55,13 +55,13 @@ class FaceDetector:
         return keep
     
     def detect(self, image, detection_threshold=None, verbose=False):
-    
+
         detection_threshold = detection_threshold or Config.DETECTION_THRESHOLD
-        
+
         h, w = image.shape[:2]
-        
-        MAX_DIMENSION = 800
-        
+
+        MAX_DIMENSION = getattr(Config, 'MAX_DIMENSION', 640)
+
         if max(w, h) > MAX_DIMENSION:
             scale = MAX_DIMENSION / max(w, h)
             new_w = int(w * scale)
@@ -187,6 +187,6 @@ if __name__ == "__main__":
         print(f"\n✓ Detected {len(detections)} face(s) in {elapsed:.2f} seconds")
         
         result = detector.draw_detections(image, detections)
-        output_path = os.path.join(Config.OUTPUT_DIR, f"fast_detected_{test_images[0]}")
+        output_path = os.path.join(Config.DETECTIONS_DIR, f"detected_{test_images[0]}")
         cv2.imwrite(output_path, result)
         print(f"💾 Result saved: {output_path}")

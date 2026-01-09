@@ -13,7 +13,6 @@ data/faces_dataset/train/images
 
 models/
 
-face_detector.pkl
 
 outputs/
 
