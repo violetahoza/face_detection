@@ -223,7 +223,7 @@ Evaluated on 100 test images with 195 ground truth faces:
 **Violeta Maria Hoza**
 - University: Technical University of Cluj-Napoca
 - Course: Pattern Recognition Systems
-- Year: 2024-2025
+- Year: 2025-2026
 
 ## 🙏 Acknowledgments
 
