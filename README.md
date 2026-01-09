@@ -229,5 +229,4 @@ Evaluated on 100 test images with 195 ground truth faces:
 
 - Dataset: [Human Faces Object Detection (Kaggle)](https://www.kaggle.com/datasets/sbaghbidi/human-faces-object-detection)
 
-
-**⭐ Star this repository if you found it helpful!**
+---
