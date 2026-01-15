@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from config import Config
+from skimage.feature import hog, local_binary_pattern
 
 class FeatureExtractor:
 
@@ -21,68 +22,78 @@ class FeatureExtractor:
         return denoised
     
     def extract_hog(self, image):
+
+        hog_features = hog(
+            image,
+            orientations=Config.HOG_ORIENTATIONS,
+            pixels_per_cell=Config.HOG_PIXELS_PER_CELL,
+            cells_per_block=Config.HOG_CELLS_PER_BLOCK,
+            block_norm='L2-Hys',
+            visualize=False,
+            feature_vector=True 
+        )
        
-        orientations = Config.HOG_ORIENTATIONS 
-        pixels_per_cell = Config.HOG_PIXELS_PER_CELL  
-        cells_per_block = Config.HOG_CELLS_PER_BLOCK  
+        # orientations = Config.HOG_ORIENTATIONS 
+        # pixels_per_cell = Config.HOG_PIXELS_PER_CELL  
+        # cells_per_block = Config.HOG_CELLS_PER_BLOCK  
         
-        image = image.astype(np.float64)
+        # image = image.astype(np.float64)
         
-        # Compute gradients using Sobel operators
-        gx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=1) 
-        gy = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=1)  
+        # # Compute gradients using Sobel operators
+        # gx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=1) 
+        # gy = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=1)  
         
-        # Compute magnitude and angle
-        magnitude = np.sqrt(gx**2 + gy**2)
-        angle = np.arctan2(gy, gx) * (180 / np.pi)  
-        angle[angle < 0] += 180 
+        # # Compute magnitude and angle
+        # magnitude = np.sqrt(gx**2 + gy**2)
+        # angle = np.arctan2(gy, gx) * (180 / np.pi)  
+        # angle[angle < 0] += 180 
         
-        # Divide into cells and compute histograms
-        cell_h, cell_w = pixels_per_cell
-        n_cells_y = image.shape[0] // cell_h
-        n_cells_x = image.shape[1] // cell_w
+        # # Divide into cells and compute histograms
+        # cell_h, cell_w = pixels_per_cell
+        # n_cells_y = image.shape[0] // cell_h
+        # n_cells_x = image.shape[1] // cell_w
         
-        # Create cell histograms
-        cell_histograms = np.zeros((n_cells_y, n_cells_x, orientations))
+        # # Create cell histograms
+        # cell_histograms = np.zeros((n_cells_y, n_cells_x, orientations))
         
-        for i in range(n_cells_y):
-            for j in range(n_cells_x):
-                # Extract cell
-                y_start = i * cell_h
-                y_end = y_start + cell_h
-                x_start = j * cell_w
-                x_end = x_start + cell_w
+        # for i in range(n_cells_y):
+        #     for j in range(n_cells_x):
+        #         # Extract cell
+        #         y_start = i * cell_h
+        #         y_end = y_start + cell_h
+        #         x_start = j * cell_w
+        #         x_end = x_start + cell_w
                 
-                cell_mag = magnitude[y_start:y_end, x_start:x_end]
-                cell_ang = angle[y_start:y_end, x_start:x_end]
+        #         cell_mag = magnitude[y_start:y_end, x_start:x_end]
+        #         cell_ang = angle[y_start:y_end, x_start:x_end]
                 
-                # Compute histogram with bilinear interpolation
-                hist = self._compute_cell_histogram(cell_mag, cell_ang, orientations)
-                cell_histograms[i, j, :] = hist
+        #         # Compute histogram with bilinear interpolation
+        #         hist = self._compute_cell_histogram(cell_mag, cell_ang, orientations)
+        #         cell_histograms[i, j, :] = hist
         
-        # Normalize histograms over blocks
-        block_h, block_w = cells_per_block
-        n_blocks_y = n_cells_y - block_h + 1
-        n_blocks_x = n_cells_x - block_w + 1
+        # # Normalize histograms over blocks
+        # block_h, block_w = cells_per_block
+        # n_blocks_y = n_cells_y - block_h + 1
+        # n_blocks_x = n_cells_x - block_w + 1
         
-        normalized_blocks = []
+        # normalized_blocks = []
         
-        for i in range(n_blocks_y):
-            for j in range(n_blocks_x):
-                block = cell_histograms[i:i+block_h, j:j+block_w, :]
-                block = block.flatten()
+        # for i in range(n_blocks_y):
+        #     for j in range(n_blocks_x):
+        #         block = cell_histograms[i:i+block_h, j:j+block_w, :]
+        #         block = block.flatten()
                 
-                norm = np.sqrt(np.sum(block**2) + 1e-5)
-                block = block / norm
+        #         norm = np.sqrt(np.sum(block**2) + 1e-5)
+        #         block = block / norm
                 
-                block = np.clip(block, 0, 0.2)
+        #         block = np.clip(block, 0, 0.2)
                 
-                norm = np.sqrt(np.sum(block**2) + 1e-5)
-                block = block / norm
+        #         norm = np.sqrt(np.sum(block**2) + 1e-5)
+        #         block = block / norm
                 
-                normalized_blocks.append(block)
+        #         normalized_blocks.append(block)
         
-        hog_features = np.concatenate(normalized_blocks)
+        # hog_features = np.concatenate(normalized_blocks)
         
         return hog_features
     
@@ -114,39 +125,41 @@ class FeatureExtractor:
         P = Config.LBP_POINTS  
         R = Config.LBP_RADIUS 
         method = Config.LBP_METHOD 
+
+        lbp_image = local_binary_pattern(image, P, R, method)
         
-        h, w = image.shape
-        lbp_image = np.zeros((h, w), dtype=np.float64)
+        # h, w = image.shape
+        # lbp_image = np.zeros((h, w), dtype=np.float64)
         
-        # Precompute neighbor coordinates
-        angles = 2 * np.pi * np.arange(P) / P
-        neighbor_y = -R * np.sin(angles)
-        neighbor_x = R * np.cos(angles)
+        # # Precompute neighbor coordinates
+        # angles = 2 * np.pi * np.arange(P) / P
+        # neighbor_y = -R * np.sin(angles)
+        # neighbor_x = R * np.cos(angles)
         
         # Process each pixel (skip border)
-        for i in range(R, h - R):
-            for j in range(R, w - R):
-                center = image[i, j]
+        # for i in range(R, h - R):
+        #     for j in range(R, w - R):
+        #         center = image[i, j]
                 
-                # Get neighbors using bilinear interpolation
-                binary_pattern = 0
-                for p in range(P):
-                    ny = i + neighbor_y[p]
-                    nx = j + neighbor_x[p]
+        #         # Get neighbors using bilinear interpolation
+        #         binary_pattern = 0
+        #         for p in range(P):
+        #             ny = i + neighbor_y[p]
+        #             nx = j + neighbor_x[p]
                     
-                    neighbor_value = self._bilinear_interpolate(image, ny, nx)
+        #             neighbor_value = self._bilinear_interpolate(image, ny, nx)
                     
-                    # Compare with center
-                    if neighbor_value >= center:
-                        binary_pattern |= (1 << p)
+        #             # Compare with center
+        #             if neighbor_value >= center:
+        #                 binary_pattern |= (1 << p)
                 
-                # For uniform patterns, count transitions
-                if method == 'uniform':
-                    lbp_code = self._get_uniform_pattern(binary_pattern, P)
-                else:
-                    lbp_code = binary_pattern
+        #         # For uniform patterns, count transitions
+        #         if method == 'uniform':
+        #             lbp_code = self._get_uniform_pattern(binary_pattern, P)
+        #         else:
+        #             lbp_code = binary_pattern
                 
-                lbp_image[i, j] = lbp_code
+        #         lbp_image[i, j] = lbp_code
         
         # Create histogram
         if method == 'uniform':
